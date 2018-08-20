@@ -1,0 +1,193 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
+namespace Apriori
+{
+
+class Itemset extends Array {
+    constructor() {
+        super();
+        this.Support = 0.0;
+    }
+}
+class ItemsetCollection extends Array {
+    constructor() {
+        super();
+    }
+}
+class AssociationRule {
+    constructor() {
+        this.X = new Itemset();
+        this.Y = new Itemset();
+        this.Support = 0.0;
+        this.Confidence = 0.0;
+    }
+}
+//Finding Frequent Itemsets
+static doApriori(db, supportThreshold) {
+    let I = db.getUniqueItems();
+    let L = new ItemsetCollection(); // Resultant large itemsets
+    let Li = new ItemsetCollection(); // Large itemset in each iteration
+    let Ci = new ItemsetCollection(); // Pruned itemset in each iteration
+
+    // First iteration (1-item itemsets)
+    for (var i = 0; i < I.length; i += 1) {
+        Ci.push(Itemset.from([I[i]]));
+    }
+    // Next iterations
+    let k = 2;
+    while (Ci.length != 0) {
+        // Set Li from Ci (pruning)
+        Li.clear();
+        for (var index in Ci) {
+            let itemset = Ci[index];
+            itemset.Support = db.findSupport(itemset);
+            if (itemset.Support >= supportThreshold) {
+                Li.push(itemset);
+                L.push(itemset);
+            }
+        }
+        // Set Ci for next iteration (find supersets of Li)
+        Ci.clear();
+        let subsets = Bit.findSubsets(Li.getUniqueItems(), k); // Get k-item subsets
+        subsets.forEach(set => Ci.push(set));
+        k += 1;
+    }
+    return L;
+}
+//Association Rules
+static mine(db, L, confidenceThreshold) {
+    let allRules = [];
+    for (var i in L) {
+        let itemset = L[i];
+        let subsets = Bit.findSubsets(itemset, 0); // Get all subsets
+        for (var j in subsets) {
+            let subset = subsets[j];
+            let confidence = (db.findSupport(itemset) / db.findSupport(subset)) * 100.0;
+            if (confidence >= confidenceThreshold) {
+                let rule = new AssociationRule();
+                subset.forEach(i => rule.X.push(i));
+                itemset.removeItemset(subset).forEach(i => rule.Y.push(i));
+                rule.Support = db.findSupport(itemset);
+                rule.Confidence = confidence;
+
+                if (rule.X.length > 0 && rule.Y.length > 0) {
+                    allRules.push(rule);
+                }
+            }
+        }
+    }
+    return allRules;
+}
+static void Main(string[] args)
+        {
+            string[] Database = System.IO.File.ReadAllLines(@"..\..\..\adult.txt");
+            
+            /*********************************/
+            /*****Preprocessing on Data  *****/
+            /*********************************/
+            List<String> processedDatabase = new List<String>();
+
+            /*processedDatabase variable has preprocessed database after discretization and attribute-value pair creation*/
+            processedDatabase = PreProcessing(Database);
+
+            /*Start the stopwatch to calculate time of execution of code*/
+            System.Diagnostics.Stopwatch calcTime = System.Diagnostics.Stopwatch.StartNew();
+
+            /*These are the variable CK and Lk which are used throught in algo. They have joined and then pruned element*/
+            /*at each step respectively*/
+            List<List<Object>> CkItemsList = new List<List<Object>>();
+            List<List<Object>> LkItemsList = new List<List<Object>>();
+            
+
+            /*Initial C1 and L1 Computation peformed. C1 will have first count list of all items*/
+            /*Lk will have pruned itemsets after checking for minimum support count. It will be L1*/
+            CkItemsList = returnC1(ref processedDatabase);
+            LkItemsList = returnLK(ref CkItemsList);
+
+            do
+            {
+                
+                List<List<Object>> LkItemsListPrevious = new List<List<Object>>();
+                LkItemsListPrevious = LkItemsList;
+
+                CkItemsList = returnCk(ref processedDatabase, ref LkItemsList);
+                /*Lk*/
+                LkItemsList = returnLK(ref CkItemsList);
+
+                if (LkItemsList.Count == 0)
+                {
+                    /*Apply pruning on temporary buffer LkItemsListPrevious and throw away all itemsets belwo minimum suppo count*/
+                    LkItemsList = returnLK(ref LkItemsListPrevious);
+
+                    /*This variable will be used if more than one itemsets are freuqent. This will keep count*/
+                    int sameItemCount = 0;
+                    int lastIndex = LkItemsList[0].Count - 1;
+
+                    if (LkItemsList.Count > 1)
+                    {
+                        /*Arrange all in Descending order and then 1st index with maximum count is frequent most itemset*/
+                        for (int i = 0; i < LkItemsList.Count; i++)
+                        {
+                            for (int j = 0; j < LkItemsList.Count - 1; j++)
+                            {
+                                if (Convert.ToInt32(LkItemsList[j][lastIndex]) < Convert.ToInt32(LkItemsList[j + 1][lastIndex]))
+                                {
+                                    List<Object> tempObjList = new List<Object>();
+                                    tempObjList = LkItemsList[j];
+                                    LkItemsList[j] = LkItemsList[j + 1];
+                                    LkItemsList[j + 1] = tempObjList;
+                                }
+
+                            }
+                        }
+
+                        /*Now all itemsets are sorted in previous step. Now check if there is more than one frequent itemset with same count*/
+                        int lastIndexOfItemset = LkItemsList[sameItemCount].Count;
+                        /*It has count of Itemsets*/
+                        lastIndexOfItemset--;
+
+                        /*This while loop only runs until there is at least one another frequent itemset, other than the one at index 0*/
+                        while (LkItemsList[sameItemCount][lastIndexOfItemset] == LkItemsList[sameItemCount + 1][lastIndexOfItemset] && sameItemCount < (LkItemsList.Count - 1))
+                        {
+                            sameItemCount++;
+                        }
+
+                        /*Add all frequent itemset to  finalLk a temporary variable which writes back final result to LkItemsList*/
+                        List<List<Object>> finalLk = new List<List<Object>>();
+                        for (int i = 0; i <= sameItemCount; i++)
+                        {
+                            finalLk.Add(LkItemsList[i]);
+                        }
+                        LkItemsList = finalLk;
+                    }
+                }
+
+
+            } while (LkItemsList.Count > 1 && CkItemsList.Count > 0); 
+
+
+            /*Stop watch ends after algorithm completes*/
+            Console.WriteLine("The Most Frequent Item Set is: \n");
+            /*Print all frequent itemsets*/
+            for (int i = 0; i < LkItemsList.Count; i++)
+            {
+                for (int j = 0; j < LkItemsList[i].Count-1; j++)
+                {
+                    Console.WriteLine(" "+LkItemsList[i][j]);
+                }
+            }
+
+            /*Stop watch ends after algorithm completes*/
+            Console.WriteLine("\nTotal Execution Time is  " + ((calcTime.ElapsedMilliseconds) / 1000) + " seconds \n");
+                       
+            if (System.Diagnostics.Debugger.IsAttached)
+            {
+                Console.WriteLine("Press any key to continue...");
+                Console.ReadKey();
+            }
+        }
+    }
+}
